@@ -1,0 +1,100 @@
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+datasource db {
+  provider = "postgresql"
+}
+enum OrderStatus {
+  OPEN
+  DONE
+}
+enum Position {
+  WHOLE
+  LEFT
+  RIGHT
+}
+enum Amount {
+  LOW
+  MEDIUM
+  HIGH
+}
+model PizzaParty {
+  id          String @id @default(cuid())
+  name        String
+  code        String @unique
+  active      Boolean @default(true)
+  nextNumber  Int @default(0)
+  revision    Int @default(0)
+  createdAt   DateTime @default(now())
+  guests      Guest[]
+  ingredients PartyIngredient[]
+  orders      Order[]
+}
+model Guest {
+  id        String @id @default(cuid())
+  name      String
+  partyId   String
+  party     PizzaParty @relation(fields: [partyId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+  orders    Order[]
+  @@index([partyId])
+}
+model IngredientCategory {
+  id          String @id
+  name        String
+  sortOrder   Int
+  ingredients Ingredient[]
+}
+model Ingredient {
+  id          String @id
+  name        String
+  categoryId  String
+  hasAmount   Boolean @default(false)
+  sortOrder   Int @default(0)
+  category    IngredientCategory @relation(fields: [categoryId], references: [id])
+  parties     PartyIngredient[]
+}
+model PartyIngredient {
+  partyId      String
+  ingredientId String
+  available    Boolean @default(true)
+  party        PizzaParty @relation(fields: [partyId], references: [id], onDelete: Cascade)
+  ingredient   Ingredient @relation(fields: [ingredientId], references: [id])
+  @@id([partyId, ingredientId])
+}
+model Order {
+  id             String @id @default(cuid())
+  partyId        String
+  guestId        String
+  guestName      String
+  number         Int
+  status         OrderStatus @default(OPEN)
+  createdAt      DateTime @default(now())
+  completedAt    DateTime?
+  idempotencyKey  String
+  requestHash    String
+  party          PizzaParty @relation(fields: [partyId], references: [id], onDelete: Cascade)
+  guest          Guest @relation(fields: [guestId], references: [id])
+  toppings       OrderIngredient[]
+  @@unique([partyId, number])
+  @@unique([guestId, idempotencyKey])
+  @@index([partyId, status, number])
+}
+model OrderIngredient {
+  id           String @id @default(cuid())
+  orderId      String
+  ingredientId String
+  name         String
+  categoryName String
+  position     Position
+  amount       Amount?
+  order        Order @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  @@unique([orderId, ingredientId])
+}
+model RateLimit {
+  key       String @id
+  count     Int
+  expiresAt DateTime
+  @@index([expiresAt])
+}

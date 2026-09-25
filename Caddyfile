@@ -1,0 +1,12 @@
+{$DOMAIN} {
+  encode zstd gzip
+  header Strict-Transport-Security "max-age=31536000"
+  request_body {
+    max_size 16KB
+  }
+  reverse_proxy app:3000 {
+    # Discard client-supplied IP headers. Rate limits trust only this proxy.
+    header_up X-Real-IP {remote_host}
+    flush_interval -1
+  }
+}
