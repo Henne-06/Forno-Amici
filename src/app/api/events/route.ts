@@ -5,8 +5,8 @@ export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 export async function GET(request: Request) {
   try {
-    const session = await requireSession();
     let partyId = new URL(request.url).searchParams.get('party');
+    const session = await requireSession(partyId ? 'baker' : 'guest');
     if (session.role === 'guest') {
       const guest = await db.guest.findUnique({ where: { id: session.id } });
       if (!guest) throw new AppError(401, 'Session abgelaufen.');

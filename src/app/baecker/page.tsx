@@ -18,7 +18,7 @@ export default function BakerPage() {
     }
   }
   useEffect(() => {
-    void api<{ role: string }>('session')
+    void api<{ role: string }>('session?role=baker')
       .then(async (s) => {
         setAuthenticated(s.role === 'baker');
         if (s.role === 'baker') await loadParties();
@@ -110,7 +110,7 @@ export default function BakerPage() {
               className="button subtle"
               onClick={async () => {
                 try {
-                  await api('logout', {});
+                  await api('logout', { role: 'baker' });
                   setAuthenticated(false);
                 } catch (e) {
                   setError(errorText(e));

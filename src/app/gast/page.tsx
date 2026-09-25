@@ -47,7 +47,7 @@ export default function GuestPage() {
 function GuestApp({ guest }: { guest: Guest }) {
   const router = useRouter();
   const { data, error: liveError, connected, refresh } = useLive('guest');
-  const [view, setView] = useState<'configure' | 'review' | 'orders'>('configure');
+  const [view, setView] = useState<'configure' | 'review' | 'orders' | null>(null);
   const [selected, setSelected] = useState<ToppingInput[]>([]);
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
@@ -173,6 +173,7 @@ function GuestApp({ guest }: { guest: Guest }) {
         <ErrorBox>{liveError}</ErrorBox>
       </main>
     );
+  const activeView = view ?? (data.orders.length ? 'orders' : 'configure');
   const readyOrders = data.orders.filter((o) => notice.includes(o.id) && o.status === 'DONE');
   const invalid = selected.filter(
     (t) => !data.ingredients.find((i) => i.id === t.ingredientId)?.available,
@@ -197,7 +198,7 @@ function GuestApp({ guest }: { guest: Guest }) {
           aria-label="Party verlassen"
           onClick={async () => {
             try {
-              await api('logout', {});
+              await api('logout', { role: 'guest' });
               router.push('/');
             } catch (e) {
               setError(errorText(e));
@@ -209,12 +210,12 @@ function GuestApp({ guest }: { guest: Guest }) {
       </div>
       <div className="tab-bar">
         <button
-          aria-pressed={view !== 'orders'}
+          aria-pressed={activeView !== 'orders'}
           onClick={() => setView(pending ? 'review' : 'configure')}
         >
           Pizza zusammenstellen
         </button>
-        <button aria-pressed={view === 'orders'} onClick={() => setView('orders')}>
+        <button aria-pressed={activeView === 'orders'} onClick={() => setView('orders')}>
           Meine Pizzen <span>{data.orders.length}</span>
         </button>
       </div>
@@ -240,7 +241,7 @@ function GuestApp({ guest }: { guest: Guest }) {
           </button>
         </div>
       )}
-      {view === 'orders' ? (
+      {activeView === 'orders' ? (
         <section>
           <div className="section-heading">
             <h2>Deine Bestellungen</h2>
@@ -280,7 +281,7 @@ function GuestApp({ guest }: { guest: Guest }) {
             </button>
           )}
         </section>
-      ) : view === 'review' ? (
+      ) : activeView === 'review' ? (
         <section className="review-card">
           <span className="eyebrow accent">NOCH EIN KLEINER CHECK</span>
           <h2>Genau so soll sie sein?</h2>

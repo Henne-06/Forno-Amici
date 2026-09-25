@@ -30,13 +30,17 @@ export async function createParty(input: unknown) {
   }
   throw new AppError(503, 'Die Party konnte nicht erstellt werden. Bitte versuche es erneut.');
 }
-export async function joinParty(input: unknown) {
+export async function joinParty(input: unknown, existingGuestId?: string) {
   const { name, code } = joinSchema.parse(input);
   return db.$transaction(async (tx) => {
     const found = await tx.pizzaParty.findUnique({ where: { code } });
     if (!found)
       throw new AppError(404, 'Diesen Gruppencode kennen wir nicht. Bitte prüfe ihn noch einmal.');
     const party = await lockParty(tx, found.id);
+    if (existingGuestId) {
+      const previous = await tx.guest.findUnique({ where: { id: existingGuestId } });
+      if (previous?.partyId === party.id && previous.name === name) return previous;
+    }
     if (!party.active) throw new AppError(409, 'Diese Party ist bereits beendet.');
     return tx.guest.create({ data: { name, partyId: party.id } });
   });

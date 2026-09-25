@@ -31,7 +31,10 @@ async function handle(request: Request, context: { params: Promise<{ path: strin
     if (request.method === 'POST') checkOrigin(request);
     const ip = request.headers.get('x-real-ip') ?? 'local';
     if (route === 'session' && request.method === 'GET') {
-      const session = await getSession();
+      const role = z
+        .enum(['guest', 'baker'])
+        .parse(new URL(request.url).searchParams.get('role') ?? 'guest');
+      const session = await getSession(role);
       if (!session) return NextResponse.json({ role: null });
       if (session.role === 'baker') return NextResponse.json({ role: 'baker' });
       const guest = await db.guest.findUnique({
@@ -42,7 +45,8 @@ async function handle(request: Request, context: { params: Promise<{ path: strin
     }
     if (route === 'join' && request.method === 'POST') {
       await rateLimit('join:' + ip, 30);
-      const guest = await joinParty(await body(request));
+      const previous = await getSession('guest');
+      const guest = await joinParty(await body(request), previous?.id);
       await setSession('guest', guest.id);
       return NextResponse.json({ partyId: guest.partyId });
     }
@@ -58,7 +62,8 @@ async function handle(request: Request, context: { params: Promise<{ path: strin
       return NextResponse.json({ ok: true });
     }
     if (route === 'logout' && request.method === 'POST') {
-      await logout();
+      const { role } = z.object({ role: z.enum(['guest', 'baker']) }).parse(await body(request));
+      await logout(role);
       return NextResponse.json({ ok: true });
     }
     if (route === 'guest' && request.method === 'GET') {
@@ -118,4 +123,10 @@ async function handle(request: Request, context: { params: Promise<{ path: strin
     );
   }
 }
-export { handle as GET, handle as POST };
+async function route(request: Request, context: { params: Promise<{ path: string[] }> }) {
+  const response = await handle(request, context);
+  response.headers.set('Cache-Control', 'private, no-store, max-age=0');
+  response.headers.set('Vary', 'Cookie');
+  return response;
+}
+export { route as GET, route as POST };

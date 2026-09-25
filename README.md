@@ -40,14 +40,14 @@ npm run db:seed
 npm run dev
 ```
 
-Öffne `http://localhost:3000` für Gäste und `http://localhost:3000/baecker` für den Bäcker. Das Bäckerpasswort steht in deiner lokalen `.env`. Gast und Bäcker auf demselben Gerät in getrennten Browserprofilen bzw. einem privaten Fenster öffnen: Ein Browserprofil hat jeweils eine aktive Rolle.
+Öffne `http://localhost:3000` für Gäste und `http://localhost:3000/baecker` für den Bäcker. Das Bäckerpasswort steht in deiner lokalen `.env`. Gast und Bäcker können im selben Browserprofil parallel angemeldet bleiben. Beide Rollen verwenden getrennte HttpOnly-Cookies; Abmelden betrifft nur die jeweilige Rolle.
 
 Für Tests mit dem Smartphone im eigenen WLAN `APP_ORIGIN` auf die tatsächlich verwendete Adresse ändern (z. B. `http://192.168.1.20:3000`). Alle Clients müssen diese Adresse verwenden. Für den regulären Betrieb HTTPS verwenden.
 
 ## Funktionen
 
 - Party erstellen, sechsstelligen Gruppencode teilen, aktive und beendete Partys wieder öffnen.
-- Gastname und Party bleiben mit signiertem HttpOnly-Cookie 30 Tage erhalten.
+- Gastname und Party bleiben mit signiertem HttpOnly-Cookie 30 Tage erhalten. Bei aktiver Nutzung wird die Laufzeit täglich erneuert; ein erneuter Beitritt zur gleichen Party mit demselben Namen erhält die bestehende Gastidentität und ihre Bestellungen.
 - Beläge frei auswählen; je Belag genau eine Position: ganze Pizza, linke oder rechte Hälfte.
 - Für jeden gewählten Käse: wenig, mittel oder viel. Auch eine Pizza ohne Belag ist möglich.
 - Vor dem Absenden die nach Positionen gruppierte Zusammenfassung prüfen.
@@ -88,7 +88,7 @@ Jede Bestellanfrage erhält eine UUID als Idempotency-Key. Diese wird vor dem Se
 
 Der Bäcker meldet sich mit dem ausschließlich serverseitig gespeicherten `BAKER_PASSWORD` an. Diese einfache Host-Rolle verwaltet alle Partys dieser Installation. Der Gruppencode verleiht **keine** Verwaltungsrechte. Gast-Snapshots und SSE-Zugriff sind an die Gast-Session gebunden; Gäste können keine fremden Bestellungen abrufen.
 
-Sessions werden mit HMAC-SHA256 signiert, sind HttpOnly und SameSite=Lax und bei HTTPS zusätzlich Secure. Passwortvergleiche erfolgen über gleichlange HMAC-Werte mit zeitkonstantem Vergleich. Es gibt kein Passwort-Reset per E-Mail. Passwort in `.env` ändern und App neu erstellen; um bereits ausgestellte Sessions zu widerrufen, zusätzlich `SESSION_SECRET` wechseln (meldet auch Gäste ab).
+Gast- und Bäckersessions werden getrennt gespeichert. Bestehende Cookies der bisherigen Version werden beim Zugriff auf die entsprechende Rolle automatisch übernommen. Sessions werden mit HMAC-SHA256 signiert, sind HttpOnly und SameSite=Lax und bei HTTPS zusätzlich Secure. Passwortvergleiche erfolgen über gleichlange HMAC-Werte mit zeitkonstantem Vergleich. Es gibt kein Passwort-Reset per E-Mail. Passwort in `.env` ändern und App neu erstellen; um bereits ausgestellte Sessions zu widerrufen, zusätzlich `SESSION_SECRET` wechseln (meldet auch Gäste ab).
 
 Alle schreibenden API-Aufrufe prüfen `Origin` gegen `APP_ORIGIN`. Serverseitige Zod- und Datenbankvalidierung ist verbindlich. React maskiert Benutzereingaben. Login ist auf 8 Versuche/Minute/IP, Beitritt auf 30/Minute/IP, neue Partys auf 10/Minute/IP und Bestellanfragen auf 15/Minute/Gast begrenzt. Rate-Limit-Zähler liegen in PostgreSQL und funktionieren über Prozessneustarts hinweg. Caddy überschreibt `X-Real-IP`; den App-Port nicht direkt öffentlich freigeben. Bei einem anderen Reverse Proxy unbedingt denselben Schutz übernehmen. Unter direktem lokalen Zugriff teilen Anfragen ohne Proxy-IP einen gemeinsamen Grenzwert.
 
@@ -218,3 +218,19 @@ git commit -m "Implement Forno Amici pizza party app"
 git remote add origin DEINE_GITHUB_REPOSITORY_URL
 git push -u origin main
 ```
+
+## Update: Anmeldungen und Bestellungen beim Rollenwechsel
+
+Die bisherige Version verwendete für beide Rollen dasselbe Cookie. Eine Bäckeranmeldung überschrieb deshalb die Gastidentität (und umgekehrt). Ein erneuter Gastbeitritt erzeugte eine neue Identität; vorhandene Bestellungen wurden nicht gelöscht, waren aber nur noch der vorherigen Identität zugeordnet.
+
+Die Korrektur trennt beide Cookies und das Abmelden pro Rolle, verlängert aktive Sitzungen, erhält beim erneuten Beitritt die noch authentifizierte Gastidentität und zeigt nach einem Reload vorhandene Bestellungen direkt an. Personenbezogene API-Antworten werden ausdrücklich vom Caching ausgeschlossen. Eine reine Übereinstimmung des Namens erlaubt aus Sicherheitsgründen keine Übernahme fremder Bestellungen. Bereits durch die alte Version überschriebene Gastidentitäten können daher nicht automatisch wiederhergestellt werden; ihre Bestellungen bleiben beim Bäcker sichtbar.
+
+Nach Übertragen des aktualisierten Codes auf den VPS genügt bei der mitgelieferten Compose-Konfiguration:
+
+```sh
+docker compose up -d --build --no-deps app
+```
+
+Es ist keine neue Datenbankmigration erforderlich. Die vorhandene `.env`, insbesondere `SESSION_SECRET`, und die Datenbank-Volumes beibehalten. Der Signaturschlüssel muss auch über Neustarts und bei mehreren App-Instanzen identisch bleiben. Kein `down -v` ausführen. Noch gültige alte Cookies werden übernommen. Falls die alte Version das Cookie bereits überschrieben hat, ist ein einmaliger erneuter Beitritt nötig.
+
+Die Korrektur wurde mit insgesamt 15 Tests geprüft (3 Fachtests, 7 Datenbanktests, 5 Browsertests). Die neuen Browsertests decken Rollenwechsel im selben Profil, persistente Cookies, erneuten Beitritt, Reload, getrenntes Abmelden, Übernahme alter Cookies und Sitzungsverlängerung ab. Produktionsbuild und ESLint bestanden ebenfalls.
